@@ -1,17 +1,14 @@
 import React, { useState } from 'react'
 import { supabase } from '../supabase'
-import { PLAYERS, TIER_ORDER, TIER_LABELS, formatOdds, getMultiplier, ENTRY_FEE } from '../data'
+import { PLAYERS, TIER_ORDER, TIER_LABELS, formatOdds, getMultiplier, ENTRY_FEE, PICKS_PER_ENTRY } from '../data'
 
 export default function EnterPage({ entrants, onEntered }) {
   const [name, setName] = useState('')
-  const [selectedGolfer, setSelectedGolfer] = useState(null)
+  const [selectedGolfers, setSelectedGolfers] = useState([])
   const [search, setSearch] = useState('')
   const [tierFilter, setTierFilter] = useState('all')
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState(null)
-
-  const takenGolfers = new Set(entrants.map(e => e.golfer))
-  const takenNames = new Set(entrants.map(e => e.name.toLowerCase()))
 
   const filteredPlayers = PLAYERS.filter(p => {
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase())
@@ -25,15 +22,29 @@ export default function EnterPage({ entrants, onEntered }) {
     if (group.length) grouped[t] = group
   })
 
+  function toggleGolfer(name) {
+    if (selectedGolfers.includes(name)) {
+      setSelectedGolfers(selectedGolfers.filter(g => g !== name))
+    } else if (selectedGolfers.length < PICKS_PER_ENTRY) {
+      setSelectedGolfers([...selectedGolfers, name])
+    }
+  }
+
   async function handleSubmit() {
     const trimmedName = name.trim()
     if (!trimmedName) { setMessage({ type: 'error', text: 'Please enter your name' }); return }
-    if (!selectedGolfer) { setMessage({ type: 'error', text: 'Please pick a golfer' }); return }
-    if (takenNames.has(trimmedName.toLowerCase())) { setMessage({ type: 'error', text: 'That name has already been entered' }); return }
-    if (takenGolfers.has(selectedGolfer)) { setMessage({ type: 'error', text: 'That golfer has already been picked' }); return }
+    if (selectedGolfers.length !== PICKS_PER_ENTRY) {
+      setMessage({ type: 'error', text: `Please pick exactly ${PICKS_PER_ENTRY} golfers` }); return
+    }
+    if (entrants.find(e => e.name.toLowerCase() === trimmedName.toLowerCase())) {
+      setMessage({ type: 'error', text: 'That name has already been entered' }); return
+    }
 
     setSubmitting(true)
-    const { error } = await supabase.from('entrants').insert({ name: trimmedName, golfer: selectedGolfer })
+    const { error } = await supabase.from('entrants').insert({
+      name: trimmedName,
+      golfers: selectedGolfers,
+    })
     setSubmitting(false)
 
     if (error) {
@@ -41,14 +52,14 @@ export default function EnterPage({ entrants, onEntered }) {
     } else {
       setMessage({ type: 'success', text: `Entry submitted! Good luck, ${trimmedName}.` })
       setName('')
-      setSelectedGolfer(null)
+      setSelectedGolfers([])
       setSearch('')
       onEntered()
     }
     setTimeout(() => setMessage(null), 4000)
   }
 
-  const selectedPlayer = selectedGolfer ? PLAYERS.find(p => p.name === selectedGolfer) : null
+  const remaining = PICKS_PER_ENTRY - selectedGolfers.length
 
   return (
     <div>
@@ -66,8 +77,8 @@ export default function EnterPage({ entrants, onEntered }) {
           <div className="stat-card-val">€{ENTRY_FEE}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-card-label">Spots left</div>
-          <div className="stat-card-val">{PLAYERS.length - entrants.length}</div>
+          <div className="stat-card-label">Picks each</div>
+          <div className="stat-card-val">{PICKS_PER_ENTRY}</div>
         </div>
       </div>
 
@@ -85,14 +96,39 @@ export default function EnterPage({ entrants, onEntered }) {
           />
         </div>
 
-        {selectedPlayer && (
-          <div className="notice notice-success" style={{ marginBottom: '1rem' }}>
-            <span>Selected: <strong>{selectedPlayer.name}</strong> — odds {formatOdds(selectedPlayer.odds)} · {getMultiplier(selectedPlayer.odds)} multiplier</span>
-          </div>
-        )}
-
         <div className="form-group">
-          <label className="form-label">Pick your golfer</label>
+          <label className="form-label">
+            Pick {PICKS_PER_ENTRY} golfers
+            {selectedGolfers.length > 0 && (
+              <span style={{ marginLeft: 8, color: remaining === 0 ? 'var(--green-mid)' : 'var(--gold)', fontWeight: 400 }}>
+                — {remaining === 0 ? 'all picked!' : `${remaining} remaining`}
+              </span>
+            )}
+          </label>
+
+          {selectedGolfers.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: '1rem' }}>
+              {selectedGolfers.map(g => {
+                const p = PLAYERS.find(pl => pl.name === g)
+                return (
+                  <div key={g} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '4px 10px', background: 'var(--green-pale)',
+                    border: '1px solid var(--green-light)', borderRadius: 99,
+                    fontSize: 13
+                  }}>
+                    <span>{g}</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{p ? formatOdds(p.odds) : ''}</span>
+                    <button onClick={() => toggleGolfer(g)} style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--text-muted)', fontSize: 14, padding: '0 2px', lineHeight: 1
+                    }}>×</button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           <div className="search-filter-row">
             <input
               type="text"
@@ -116,19 +152,16 @@ export default function EnterPage({ entrants, onEntered }) {
             <div key={tier}>
               <div className="tier-section-label">{TIER_LABELS[tier]}</div>
               {grouped[tier].map(p => {
-                const taken = takenGolfers.has(p.name)
-                const sel = selectedGolfer === p.name
+                const sel = selectedGolfers.includes(p.name)
+                const maxed = selectedGolfers.length >= PICKS_PER_ENTRY && !sel
                 return (
                   <div
                     key={p.name}
-                    className={`player-pick-row${sel ? ' selected' : ''}${taken ? ' taken' : ''}`}
-                    onClick={() => !taken && setSelectedGolfer(sel ? null : p.name)}
+                    className={`player-pick-row${sel ? ' selected' : ''}${maxed ? ' taken' : ''}`}
+                    onClick={() => !maxed && toggleGolfer(p.name)}
                   >
                     <div className="pick-check">{sel ? '✓' : ''}</div>
-                    <span className="player-pick-name">
-                      {p.name}
-                      {taken && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>taken</span>}
-                    </span>
+                    <span className="player-pick-name">{p.name}</span>
                     <span className="player-pick-country">{p.country}</span>
                     <span className={`tier-badge tier-${p.tier}`}>{formatOdds(p.odds)}</span>
                     <span className="player-pick-mult">{getMultiplier(p.odds)}</span>
@@ -148,13 +181,13 @@ export default function EnterPage({ entrants, onEntered }) {
         <button
           className="btn btn-primary"
           onClick={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || selectedGolfers.length !== PICKS_PER_ENTRY}
         >
           {submitting ? 'Submitting...' : `Submit entry · €${ENTRY_FEE}`}
         </button>
 
         <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: '0.75rem' }}>
-          Each golfer can only be picked once. Higher odds = bigger multiplier if they finish top 10.
+          Pick {PICKS_PER_ENTRY} golfers. Your combined points from all {PICKS_PER_ENTRY} count towards your total. Higher odds = bigger multiplier if they finish top 10.
         </p>
       </div>
     </div>
