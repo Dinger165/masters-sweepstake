@@ -84,4 +84,3 @@ export const TIER_ORDER = ['fav', 'cont', 'long', 'big']
 
 export const ENTRY_FEE = 20
 export const PICKS_PER_ENTRY = 5
-export const PICKS_PER_ENTRY = 5
