@@ -82,4 +82,4 @@ export const TIER_LABELS = {
 
 export const TIER_ORDER = ['fav', 'cont', 'long', 'big']
 
-export const ENTRY_FEE = 5
+export const ENTRY_FEE = 20
