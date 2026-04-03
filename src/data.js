@@ -63,7 +63,12 @@ export function getMultiplier(odds) {
 }
 
 export function formatOdds(odds) {
-  return '+' + odds.toLocaleString()
+  const decimal = (odds / 100) + 1
+  const gcd = (a, b) => b === 0 ? a : gcd(b, a % b)
+  const num = Math.round(decimal * 100)
+  const den = 100
+  const divisor = gcd(num, den)
+  return (num / divisor - den / divisor) + '/' + (den / divisor)
 }
 
 export function ordinal(n) {
